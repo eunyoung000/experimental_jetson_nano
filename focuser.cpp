@@ -43,7 +43,6 @@ void Focuser::Reset(int focus_value) {
     m_max_sharpness = 0.0;
     m_current_focus_value = focus_value;
     m_best_focus_value = m_current_focus_value;
-    m_current_focus_value = 120;
     set(m_current_focus_value);
 }
 

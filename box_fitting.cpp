@@ -1,6 +1,7 @@
 #include "box_fitting.h"
 
 #include <iostream>
+#include <sstream>
 
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/calib3d/calib3d.hpp"
@@ -8,6 +9,15 @@
 
 namespace perception {
 namespace {
+
+template <typename T>
+std::string to_string_with_precision(const T a_value, const int n = 2) {
+    std::ostringstream out;
+    out.precision(n);
+    out << std::fixed << a_value;
+    return out.str();
+}
+
 
 void RunCornerDetection(const cv::Mat& input) {
     cv::Mat resized_frame;
@@ -149,8 +159,8 @@ void DisplayProjected3DViewFromSide(
     const perception::ModelInfo& forklift,
     const std::unordered_map<std::string, perception::SKUInfo>& model_info,
     const std::vector<MatchedModelInfo>& matched_sku_info) {
-    const int kXBuffer = 300;
-    const int kYBuffer = -300;
+    const int kXBuffer = 200;
+    const int kYBuffer = -100;
     // Object to camera coordinate
     cv::Mat object_2_camera;
     Rodrigues(forklift.GetRotationVector(), object_2_camera);
@@ -198,6 +208,8 @@ void DisplayProjected3DViewFromSide(
     cv::line(projection_image, end1, end3, cv::Scalar(0, 255, 0), 2);
     cv::circle(projection_image, end1, 3, cv::Scalar(255, 255, 255), 5);
 
+    cv::rectangle(projection_image, cv::Rect(10, 10, 980, 300), cv::Scalar(255, 255, 255), -1);
+    cv::rectangle(projection_image, cv::Rect(10, 10, 980, 300), cv::Scalar(0, 0, 0), 5, 4);
 
     std::cout << " matched_model size" << matched_sku_info.size() << std::endl;
 
@@ -205,9 +217,13 @@ void DisplayProjected3DViewFromSide(
     float max_height_mm = 0;
     // Assume that there is only type of box on the pallet.
     float model_cbm = 0;
+    std::set<std::string> detected_sku_ids;
+    float total_weight = 0.f;
+    float total_cbm = 0.f;
     // Convert the detected box info into the world.
     for (const auto& matched_sku : matched_sku_info) {
         const auto& matched_model = model_info.at(matched_sku.sku_id);
+        detected_sku_ids.insert(matched_sku.sku_id);
         cv::Mat object_2_camera;
         Rodrigues(matched_sku.rvect, object_2_camera);
         const auto& matched_object_vertices = matched_model.GetObjectVertices();
@@ -225,12 +241,15 @@ void DisplayProjected3DViewFromSide(
         model_cbm = matched_model.GetWidth() * matched_model.GetHeight() * matched_model.GetDepth();
         // Due to the error in the measurements, we allow some tolerance.
         const float height_buffer = matched_model.GetHeight() * 0.5f;
-        potential_box_num += static_cast<int>((max_z + height_buffer) / matched_model.GetHeight());
+        int possible_box_count = static_cast<int>((max_z + height_buffer) / matched_model.GetHeight());
+        potential_box_num += possible_box_count;
+        total_weight += matched_model.GetWeight() * possible_box_count;
+        total_cbm += model_cbm * possible_box_count;
      //   UpdateZoneAvailability(forklift.width_mm, forklift.height_mm, forklift.depth_mm, transformed_points, &is_zone_available) ;
-        const auto& location = projected_points[0];
+        // const auto& location = projected_points[0];
         
-        const std::string sku_id = "id: " + matched_model.GetSkuId();
-        putText(projection_image, sku_id , cv::Point(location.x, location.y + 50), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255), 2);
+        // const std::string sku_id = "id: " + matched_model.GetSkuId();
+        // putText(projection_image, sku_id , cv::Point(location.x, location.y + 50), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255), 2);
         // std::string occupided_zone = "occupied zone: ";
         // for (int i = 0; i < is_zone_available.size(); ++i) {
         //     occupided_zone += std::to_string(is_zone_available[i]) + " ";
@@ -240,22 +259,24 @@ void DisplayProjected3DViewFromSide(
         drawProjected3DBox(projected_points, &projection_image);
         max_height_mm = std::max(max_height_mm, max_z);
     }
-    
+    const int kHeightGap = 40;
     if (matched_sku_info.size() > 0) {
+        const std::string text1 = "number of SKUs identified: " + std::to_string(detected_sku_ids.size());
+        putText(projection_image, text1 , cv::Point(20, kHeightGap), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 0), 2);
         const std::string text = "number of boxes identified: " +  std::to_string(matched_sku_info.size());
-        putText(projection_image, text , cv::Point(30, 100), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 255), 2);
-        const std::string text2 = "number of guessed boxes on the pallet: " + std::to_string(potential_box_num);
-        putText(projection_image, text2 , cv::Point(30, 130), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 255), 2);
-        const std::string text3 = "max height of the boxes on the pallet (mm): " + std::to_string(max_height_mm);
-        putText(projection_image, text3 , cv::Point(30, 160), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 255), 2);
+        putText(projection_image, text , cv::Point(20, 2 * kHeightGap), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 0), 2);
+        const std::string text2 = "number of boxes potentially on the pallet: " + std::to_string(potential_box_num);
+        putText(projection_image, text2 , cv::Point(20, 3 * kHeightGap), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 0), 2);
+        const std::string text3 = "max height of the boxes on the pallet (mm): " + to_string_with_precision(max_height_mm, 2);
+        putText(projection_image, text3 , cv::Point(20, 4 * kHeightGap), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 0), 2);
 
         const float forklift_cbm = forklift.GetWidth() * forklift.GetHeight() * forklift.GetDepth();
-        const float occupied_cbm = model_cbm * potential_box_num;
-    
-        const float occupancy_percentage = static_cast<float>(occupied_cbm) / static_cast<float>(forklift_cbm);
+        const float occupancy_percentage = static_cast<float>(total_cbm) / static_cast<float>(forklift_cbm);
 
-        const std::string percentage_used = "% of occupied potentially: " + std::to_string(occupancy_percentage * 100);
-        putText(projection_image, percentage_used, cv::Point(30, 190), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 255), 2);
+        const std::string percentage_used = "% of occupied potentially: " + to_string_with_precision(occupancy_percentage * 100, 2);
+        putText(projection_image, percentage_used, cv::Point(20, 5 * kHeightGap), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 0), 2);
+        const std::string weight_text = "total weight on the pallet: (kg) " + to_string_with_precision(total_weight, 2);
+        putText(projection_image, weight_text, cv::Point(20, 6 * kHeightGap), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 0), 2);
     }
 
     
@@ -309,7 +330,7 @@ void BoxFitting::Run3DBoxFitting(const cv::Mat& input,
     std::vector<MatchedModelInfo> matched_sku_info;
     if (qr_code_list.size() > 0) {
         for (const auto& qrcode : qr_code_list) {
-            std::cout << "sku " << qrcode.first << std::endl;
+           // std::cout << "sku " << qrcode.first << std::endl;
             if (model_info.count(qrcode.first) > 0) {
                 auto& matched_model = model_info.at(qrcode.first);
                 if (known_qrcode) {
