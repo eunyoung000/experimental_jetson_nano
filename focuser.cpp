@@ -1,5 +1,6 @@
 #include "focuser.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <string>

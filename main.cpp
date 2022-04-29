@@ -25,9 +25,10 @@ namespace {
 
 // Maximum width/height: 4056, 3040.
 // 2028, 1520
-constexpr int kImageWidth = 4032;
-constexpr int kImageHeight = 3040;
+constexpr int kImageWidth = 1920; // 4032;
+constexpr int kImageHeight = 1080; // 3040;
 constexpr bool kDebuggingMode = false;
+constexpr float kResizeRatio = 0.2f;
 
 std::string GetGStreamerPipeline(int capture_width, int capture_height, int display_width, int display_height, int framerate, int flip_method=0) {
     return "nvarguscamerasrc aelock=true gainrange=\"7 7\" exposuretimerange=\"5000000 5000000\" !  video/x-raw(memory:NVMM), width=(int)" + std::to_string(capture_width) + ", height=(int)" +
@@ -134,11 +135,11 @@ void AddMarginToBoundingBox(float margin_ratio, cv::Rect* bounding_box) {
 }
 
 std::vector<cv::Rect> GetRegionOfInterest(const Mat& frame) {
-    float scale = 0.1f;
+    float scale = kResizeRatio;
     const int resized_width = static_cast<int>(scale * frame.cols);
     const int resized_height = static_cast<int>(scale * frame.rows);
 
-    cout << resized_width << " "<<  resized_height << endl;
+    cout << "resized image size: " << resized_width << " "<<  resized_height << endl;
     cv::Mat resized_frame;
     cv::resize(frame, resized_frame, cv::Size(resized_width, resized_height));
 
@@ -146,7 +147,8 @@ std::vector<cv::Rect> GetRegionOfInterest(const Mat& frame) {
     cv::Mat resized_grayimage;
     cv::cvtColor(resized_frame, resized_grayimage, cv::COLOR_BGR2GRAY);
 
-    cv::threshold(resized_grayimage, resized_grayimage, 75, 255, cv::THRESH_BINARY_INV);
+   // cv::threshold(resized_grayimage, resized_grayimage, 75, 255, cv::THRESH_BINARY_INV);
+    cv::adaptiveThreshold(resized_grayimage, resized_grayimage, 255, ADAPTIVE_THRESH_GAUSSIAN_C,THRESH_BINARY_INV, 21, 20);
     //imshow("binary", resized_grayimage);
 
     // Erode to fill the small gap in the qrcode pattern (black part).
@@ -169,29 +171,37 @@ std::vector<cv::Rect> GetRegionOfInterest(const Mat& frame) {
     std::vector<cv::Rect> rois;
     for (size_t i = 0; i < contours.size(); i++) {
         cv::Rect bounding_box = boundingRect(contours[i]);
-        vector<Point> contours_poly;
-        float perimeter = arcLength(contours[i], true);
-        approxPolyDP(contours[i], contours_poly, /*epsilon=*/0.05 * perimeter, /*closed=*/true);
-        if (contours_poly.size() != 4) {
-            continue;
-        }
+        // vector<Point> contours_poly;
+        // float perimeter = arcLength(contours[i], true);
+        // approxPolyDP(contours[i], contours_poly, /*epsilon=*/0.05 * perimeter, /*closed=*/true);
+        // if (contours_poly.size() != 4) {
+        //     std::cout << "Contour poly size is not 4 " << contours_poly.size() << std::endl;
+        //     continue;
+        // }
         
         float ratio = bounding_box.width / static_cast<float>(bounding_box.height);
 
         if (ratio < 0.5 || ratio > 1.5) {
+            // std::cout << "Box ratio isn't matched with the condition " << ratio << std::endl;
             continue;
         }
         // Tranform the box back to the original coordinate system.
         ScaleBoundingBox(1.f / scale, &bounding_box);
         AddMarginToBoundingBox(0.15f, &bounding_box);
-        float area = bounding_box.width * bounding_box.height;
+   
         // Filter if the region is smaller than 100x100 or bigger than 500x500.
-        if (area < 10000 || area > 300000) {
+        if (bounding_box.width < 50 || bounding_box.height < 50) {
+            // std::cout << "The size of the box is too small" << bounding_box.width << " " << bounding_box.height << std::endl;
+            continue;
+        }
+        if (bounding_box.width > 300 || bounding_box.height > 300) {
+            // std::cout << "The size of the box is too large" << bounding_box.width << " " << bounding_box.height << std::endl;
             continue;
         }
         if (bounding_box.x + bounding_box.width >= frame.cols || bounding_box.y + bounding_box.height >= frame.rows) {
             continue;
         }
+        std::cout << "bounding box width & height " << bounding_box.width << " " << bounding_box.height << std::endl;
         rois.push_back(bounding_box);
     }
     return rois;
@@ -550,7 +560,7 @@ int main(int argc, char **argv) {
     };
 
     // Set up the camera intrinsic parameters.
-    cv::Mat camera_matrix(3,3,cv::DataType<float>::type);
+    cv::Mat camera_matrix(3, 3,cv::DataType<float>::type);
     cv::setIdentity(camera_matrix);
     camera_matrix.at<float>(0, 0) = 3806.59493;
     camera_matrix.at<float>(0, 2) = 2143.26588;
@@ -585,7 +595,7 @@ int main(int argc, char **argv) {
    // model_info["sku 1234567890"] = forklift;
 
     VideoCapture capture = GetVideoCapture(video_path);
-    const int kInitialFocusValue = 120;
+    const int kInitialFocusValue = 130;
     if (!capture.isOpened()) {
         cerr << "Could not open camera." << endl;
         exit(EXIT_FAILURE);
@@ -614,6 +624,8 @@ int main(int argc, char **argv) {
         //         continue;
         //     }
         // }
+
+        std::cout <<"## original size " << original_frame.cols << " " << original_frame.rows << std::endl;
         cv::Mat output_image = original_frame.clone();
         cv::Mat resized_frame;
         cv::resize(original_frame, resized_frame, cv::Size(403, 304));
@@ -634,7 +646,7 @@ int main(int argc, char **argv) {
             std::vector<uchar> status;
             std::vector<float> err;
             cv::calcOpticalFlowPyrLK(old_gray_frame, resized_grayimage, old_points, current_points, status, err, cv::Size(15,15), 2, criteria);     
-            std::cout << "### old_points " << old_points.size() << std::endl;
+            // std::cout << "### old_points " << old_points.size() << std::endl;
             const int num_tracked_boxes = (int) qr_results.size();
 
             std::vector<std::pair<std::string, std::vector<cv::Point2f>>> new_qr_results;
@@ -647,7 +659,7 @@ int main(int argc, char **argv) {
                     }
                     corners.push_back(current_points[i * 4 + j]);
                 }
-                std::cout << "#### valid_count " << valid_count << std::endl;
+                // std::cout << "#### valid_count " << valid_count << std::endl;
                 if (valid_count >= 4) {
                     for (int j = 0; j < 4; j++) {
                         good_new.push_back(corners[j]);
@@ -662,9 +674,9 @@ int main(int argc, char **argv) {
                 }
                 
             }
-            std::cout << "#### " << qr_results.size() << " " << new_qr_results.size() << std::endl;
+            //std::cout << "#### " << qr_results.size() << " " << new_qr_results.size() << std::endl;
             qr_results = new_qr_results;
-            std::cout << "### good_new " << good_new.size() << std::endl;
+            //std::cout << "### good_new " << good_new.size() << std::endl;
             old_points = good_new;   
         }
 
@@ -683,7 +695,7 @@ int main(int argc, char **argv) {
 
         for (auto& roi : rois) {
             if (IsAlreadyBeingTracked(roi, tracked_rois)) {
-                std::cout << "Skipped! " << std::endl;
+                // std::cout << "Skipped! " << std::endl;
                 continue;
             }
             const auto cropped = original_frame(roi);
@@ -694,11 +706,11 @@ int main(int argc, char **argv) {
 
             cout << "image based roi resolution: " << cropped.cols << " " << cropped.rows << endl;
             zbar_qr_recognizer.RunRecognition(cropped, roi, &qr_results, &output_image);
-            if (kDebuggingMode) {
+            if (true) {
                 cv::rectangle(output_image, roi, cv::Scalar(255, 0, 0), 10);
             }
         }
-        box_fitting->Run3DBoxFitting(original_frame, qr_results, qr_model, forklift, model_info, &output_image);
+        // box_fitting->Run3DBoxFitting(original_frame, qr_results, qr_model, forklift, model_info, &output_image);
 
         // Show captured frame, now with overlays!
         DisplayOutput(output_image, 0.5f);
