@@ -20,12 +20,13 @@ include(CPack)
 set(OpenCV_INCLUDE_DIRS /usr/include/opencv4)
 set(OpenCV_LIBRARIES /usr/lib/opencv4)
 
-find_package( OpenCV REQUIRED )
+find_package(OpenCV REQUIRED)
+find_package(gflags REQUIRED)
 
 set(Zbar_INCLUDE_DIRS /usr/include/zbar)
 set(Zbar_LIBRARIES /usr/lib/aarch64-linux-gnu/libzbar.a)
 
-include_directories(${OpenCV_INCLUDE_DIRS} ${Zbar_INCLUDE_DIRS} )
+include_directories(${OpenCV_INCLUDE_DIRS} ${Zbar_INCLUDE_DIRS} ${gflags_INCLUDE_DIR})
 
 # Focuser class
 set(FOCUSER_SOURCE focuser.cpp)
@@ -44,7 +45,7 @@ add_library(${BOX_FITTING_LIB} ${BOX_FITTING_SOURCE} ${BOX_FITTING_HEADERS})
 set(QRCODE_SOURCE main.cpp)
 
 add_executable(qrcode ${QRCODE_SOURCE})
-target_link_libraries(qrcode ${BOX_FITTING_LIB} ${FOCUSER_LIB} ${OpenCV_LIBRARIES} ${Zbar_LIBRARIES})
+target_link_libraries(qrcode ${BOX_FITTING_LIB} ${FOCUSER_LIB} ${OpenCV_LIBRARIES} ${Zbar_LIBRARIES} gflags)
 
 set(CAPTURE_SOURCE
    ${FOCUSER_SOURCE}

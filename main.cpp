@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <gflags/gflags.h>
+
 #include "box_fitting.h"
 #include "focuser.h"
 #include "opencv2/core/core.hpp"
@@ -25,10 +27,15 @@ namespace {
 
 // Maximum width/height: 4056, 3040.
 // 2028, 1520
-constexpr int kImageWidth = 1920; // 4032;
-constexpr int kImageHeight = 1080; // 3040;
+constexpr int kImageWidth = 4032;
+constexpr int kImageHeight = 3040;
 constexpr bool kDebuggingMode = false;
-constexpr float kResizeRatio = 0.2f;
+constexpr float kResizeRatio = 0.1f;
+
+DEFINE_bool(enable_tracking, false, "True to enable tracking");
+DEFINE_bool(enable_3d_box_fitting, false, "True to enable 3d box fitting");
+DEFINE_bool(visualize_boxes, false, "True to visualize the detected boxes in the image");
+DEFINE_string(video_path, "", "Run the process with a saved video");
 
 std::string GetGStreamerPipeline(int capture_width, int capture_height, int display_width, int display_height, int framerate, int flip_method=0) {
     return "nvarguscamerasrc aelock=true gainrange=\"7 7\" exposuretimerange=\"5000000 5000000\" !  video/x-raw(memory:NVMM), width=(int)" + std::to_string(capture_width) + ", height=(int)" +
@@ -241,6 +248,11 @@ std::unordered_map<std::string, perception::SKUInfo> IntializeModelInfo() {
         { 168.9, 30, 152.4f },
         { 80, 30, 152.4f }
     };
+    // const auto& vertices = first_sku_info.GetObjectVertices();
+    // for (const auto& vertice : vertices) {
+    //     std::cout << vertice.x << " " << vertice.y << " " << vertice.z << std::endl;
+    // }
+    
     model_info[kFirstSKUId] = first_sku_info;
 
     // model_info[sku_id].sku_id = kFirstSKUId;
@@ -542,11 +554,13 @@ bool IsAlreadyBeingTracked(const cv::Rect& roi, const std::vector<cv::Rect>& tra
 //     return 0;
 // }
 
+// With tracking
 int main(int argc, char **argv) {
     string video_path = "";
-    if (argc == 2) {
+    gflags::ParseCommandLineFlags(&argc, &argv, true);
+    if (!FLAGS_video_path.empty()) {
         // If a video path is given as an input, it processes the video.
-        video_path = argv[1];
+        video_path = FLAGS_video_path;
     }
     // Create a potential loading region on the forklift.
     float rotation_vector[3] = {2.561808810508662, -0.01263617213322713, -0.004604882284415327};
@@ -633,7 +647,7 @@ int main(int argc, char **argv) {
         cv::cvtColor(resized_frame, resized_grayimage, cv::COLOR_BGR2GRAY);
 
         std::vector<cv::Rect> tracked_rois;
-        if (!old_gray_frame.empty() && qr_results.size() > 0) {
+        if (FLAGS_enable_tracking && !old_gray_frame.empty() && qr_results.size() > 0) {
             cv::TermCriteria criteria = cv::TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), 10, 0.03);
             std::vector<cv::Point2f> old_points, good_new, current_points;
 
@@ -692,25 +706,29 @@ int main(int argc, char **argv) {
         if (kDebuggingMode) {
             VisualizeElapsedTime("ROI computation in ms", begin_ms, end_ms, &output_image);
         }
-
+        if (!FLAGS_enable_tracking) {
+            qr_results.clear();
+        }
         for (auto& roi : rois) {
-            if (IsAlreadyBeingTracked(roi, tracked_rois)) {
+            if (FLAGS_enable_tracking && IsAlreadyBeingTracked(roi, tracked_rois)) {
                 // std::cout << "Skipped! " << std::endl;
                 continue;
             }
             const auto cropped = original_frame(roi);
-        // Mat bbox, rectified_image;
-        // auto decoded_string = qrDecoder.detectAndDecode(cropped, bbox, rectified_image);
-        // cout <<"opencv output " << bbox.cols << " " << bbox.rows << " " << decoded_string << endl;
-        //  imshow("cropped", cropped);
 
             cout << "image based roi resolution: " << cropped.cols << " " << cropped.rows << endl;
             zbar_qr_recognizer.RunRecognition(cropped, roi, &qr_results, &output_image);
-            if (true) {
+            if (FLAGS_visualize_boxes) {
                 cv::rectangle(output_image, roi, cv::Scalar(255, 0, 0), 10);
+                for (const auto& qr_result : qr_results) {
+                    cv::Rect qr_region = cv::boundingRect(qr_result.second);
+                    cv::rectangle(output_image, qr_region, cv::Scalar(0, 255, 0), 10);
+                }
             }
         }
-        // box_fitting->Run3DBoxFitting(original_frame, qr_results, qr_model, forklift, model_info, &output_image);
+        if (FLAGS_enable_3d_box_fitting) {
+            box_fitting->Run3DBoxFitting(original_frame, qr_results, qr_model, forklift, model_info, &output_image);
+        }
 
         // Show captured frame, now with overlays!
         DisplayOutput(output_image, 0.5f);
@@ -721,7 +739,9 @@ int main(int argc, char **argv) {
         if (key == 27) {
             break;
         }
-        old_gray_frame = resized_grayimage.clone();
+        if (!FLAGS_enable_tracking) {
+            old_gray_frame = resized_grayimage.clone();
+        }
     }
     capture.release();
     return 0;

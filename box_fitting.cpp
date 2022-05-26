@@ -229,15 +229,17 @@ void DisplayProjected3DViewFromSide(
         const auto& matched_object_vertices = matched_model.GetObjectVertices();
         std::vector<cv::Point3f> transformed_points(matched_object_vertices.size());
         float max_z = 0.f;
+        std::cout << " matched_model size" << matched_object_vertices.size() << std::endl;
         for (int i = 0; i < (int) matched_object_vertices.size(); i++) {
             const auto& point =  matched_object_vertices[i];
-            cv::Mat object_point = (cv::Mat_<float>(3, 1) << point.x, point.y, point.z);
+            cv::Mat object_point = (cv::Mat_<double>(3, 1) << point.x, point.y, point.z);
             cv::Mat_<float> object_point_in_camera = object_2_camera * object_point + matched_sku.tvect;
             cv::Mat_<float> object_point_in_forklift = camera2object_rot * (object_point_in_camera - forklift.GetTranslationVector());
             transformed_points[i] = cv::Point3f(object_point_in_forklift);
             if (max_z < transformed_points[i].z) max_z = transformed_points[i].z;
             projected_points[i] = ConvertObjectCoordToImage(cv::Point3f(object_point_in_forklift) * scale, kXBuffer, kYBuffer, projection_image.rows);
         }
+        std::cout << " matched_model size" << matched_sku.sku_id << std::endl;
         model_cbm = matched_model.GetWidth() * matched_model.GetHeight() * matched_model.GetDepth();
         // Due to the error in the measurements, we allow some tolerance.
         const float height_buffer = matched_model.GetHeight() * 0.5f;
@@ -245,20 +247,10 @@ void DisplayProjected3DViewFromSide(
         potential_box_num += possible_box_count;
         total_weight += matched_model.GetWeight() * possible_box_count;
         total_cbm += model_cbm * possible_box_count;
-     //   UpdateZoneAvailability(forklift.width_mm, forklift.height_mm, forklift.depth_mm, transformed_points, &is_zone_available) ;
-        // const auto& location = projected_points[0];
-        
-        // const std::string sku_id = "id: " + matched_model.GetSkuId();
-        // putText(projection_image, sku_id , cv::Point(location.x, location.y + 50), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255), 2);
-        // std::string occupided_zone = "occupied zone: ";
-        // for (int i = 0; i < is_zone_available.size(); ++i) {
-        //     occupided_zone += std::to_string(is_zone_available[i]) + " ";
-        // }
-        // putText(projection_image, occupided_zone, Point(location.x, location.y + 150), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255), 2);
-
         drawProjected3DBox(projected_points, &projection_image);
         max_height_mm = std::max(max_height_mm, max_z);
     }
+
     const int kHeightGap = 40;
     if (matched_sku_info.size() > 0) {
         const std::string text1 = "number of SKUs identified: " + std::to_string(detected_sku_ids.size());
@@ -328,9 +320,9 @@ void BoxFitting::Run3DBoxFitting(const cv::Mat& input,
     cv::Mat* output_image) {
     bool known_qrcode = true;
     std::vector<MatchedModelInfo> matched_sku_info;
+
     if (qr_code_list.size() > 0) {
         for (const auto& qrcode : qr_code_list) {
-           // std::cout << "sku " << qrcode.first << std::endl;
             if (model_info.count(qrcode.first) > 0) {
                 auto& matched_model = model_info.at(qrcode.first);
                 if (known_qrcode) {
@@ -338,7 +330,11 @@ void BoxFitting::Run3DBoxFitting(const cv::Mat& input,
                     matched_model_info.rvect = cv::Mat(3, 1, cv::DataType<float>::type);
                     matched_model_info.tvect = cv::Mat(3, 1, cv::DataType<float>::type);
                     RunPnP(qrcode.second, matched_model.GetFeatureVertices(), &matched_model_info.rvect, &matched_model_info.tvect);
+
                     auto projected_points = GetProjectedPoints(matched_model.GetObjectVertices(), matched_model_info.rvect, matched_model_info.tvect);
+                    // for (int q = 0; q < projected_points.size(); ++q) {
+                    //     std::cout << "projected: " <<  projected_points[q].x << " " << projected_points[q].y  << std::endl;
+                    // }
                     drawProjected3DBox(projected_points, output_image);
                     drawModelInfo(matched_model, qrcode.second[1], output_image);
                     VisualizeQrOutput(qr_code_list, output_image);
