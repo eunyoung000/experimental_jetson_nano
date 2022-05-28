@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 
+#include "glog/logging.h"
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/highgui/highgui.hpp"
@@ -229,15 +230,17 @@ void DisplayProjected3DViewFromSide(
         const auto& matched_object_vertices = matched_model.GetObjectVertices();
         std::vector<cv::Point3f> transformed_points(matched_object_vertices.size());
         float max_z = 0.f;
-        std::cout << " matched_model size" << matched_object_vertices.size() << std::endl;
         for (int i = 0; i < (int) matched_object_vertices.size(); i++) {
             const auto& point =  matched_object_vertices[i];
             cv::Mat object_point = (cv::Mat_<double>(3, 1) << point.x, point.y, point.z);
             cv::Mat_<float> object_point_in_camera = object_2_camera * object_point + matched_sku.tvect;
             cv::Mat_<float> object_point_in_forklift = camera2object_rot * (object_point_in_camera - forklift.GetTranslationVector());
             transformed_points[i] = cv::Point3f(object_point_in_forklift);
-            if (max_z < transformed_points[i].z) max_z = transformed_points[i].z;
+            if (max_z < transformed_points[i].z) {
+                max_z = transformed_points[i].z;
+            }
             projected_points[i] = ConvertObjectCoordToImage(cv::Point3f(object_point_in_forklift) * scale, kXBuffer, kYBuffer, projection_image.rows);
+            LOG(INFO) << projected_points[i].x << " " << projected_points[i].y;
         }
         std::cout << " matched_model size" << matched_sku.sku_id << std::endl;
         model_cbm = matched_model.GetWidth() * matched_model.GetHeight() * matched_model.GetDepth();
@@ -270,14 +273,6 @@ void DisplayProjected3DViewFromSide(
         const std::string weight_text = "total weight on the pallet: (kg) " + to_string_with_precision(total_weight, 2);
         putText(projection_image, weight_text, cv::Point(20, 6 * kHeightGap), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 0), 2);
     }
-
-    
-
-    // cv::line(projection_image, projected_points[0], projected_points[1], cv::Scalar(0, 255, 255), 5);
-    // cv::line(projection_image, projected_points[1], projected_points[5], cv::Scalar(0, 255, 255), 5);
-    // cv::line(projection_image, projected_points[4], projected_points[5], cv::Scalar(0, 255, 255), 5);
-    
-
     cv::imshow("projection_image", projection_image);
 }
 

@@ -22,11 +22,12 @@ set(OpenCV_LIBRARIES /usr/lib/opencv4)
 
 find_package(OpenCV REQUIRED)
 find_package(gflags REQUIRED)
+find_package(glog 0.4.0 REQUIRED)
 
 set(Zbar_INCLUDE_DIRS /usr/include/zbar)
 set(Zbar_LIBRARIES /usr/lib/aarch64-linux-gnu/libzbar.a)
 
-include_directories(${OpenCV_INCLUDE_DIRS} ${Zbar_INCLUDE_DIRS} ${gflags_INCLUDE_DIR})
+include_directories(${OpenCV_INCLUDE_DIRS} ${Zbar_INCLUDE_DIRS} ${gflags_INCLUDE_DIR} ${glog_INCLUDE_DIRS})
 
 # Focuser class
 set(FOCUSER_SOURCE focuser.cpp)
@@ -42,10 +43,17 @@ set(BOX_FITTING_LIB "box_fitting_lib")
 
 add_library(${BOX_FITTING_LIB} ${BOX_FITTING_SOURCE} ${BOX_FITTING_HEADERS})
 
+# QRcode recognizer class
+set(QRCODE_RECOGNIZER_SOURCE qrcode_recognizer.cpp multiframe_based_qrcode_recognizer.cpp)
+set(QRCODE_RECOGNIZER_HEADER qrcode_recognizer.h multiframe_based_qrcode_recognizer.h)
+set(QRCODE_RECOGNIZER_LIB "qrcode_recognizer_lib")
+
+add_library(${QRCODE_RECOGNIZER_LIB} ${QRCODE_RECOGNIZER_SOURCE} ${QRCODE_RECOGNIZER_HEADER})
+
 set(QRCODE_SOURCE main.cpp)
 
 add_executable(qrcode ${QRCODE_SOURCE})
-target_link_libraries(qrcode ${BOX_FITTING_LIB} ${FOCUSER_LIB} ${OpenCV_LIBRARIES} ${Zbar_LIBRARIES} gflags)
+target_link_libraries(qrcode ${BOX_FITTING_LIB} ${FOCUSER_LIB}  ${QRCODE_RECOGNIZER_LIB} ${OpenCV_LIBRARIES} ${Zbar_LIBRARIES} gflags glog::glog)
 
 set(CAPTURE_SOURCE
    ${FOCUSER_SOURCE}
