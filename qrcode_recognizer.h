@@ -27,6 +27,7 @@ class QrCodeRecognizer {
   // Create a zbar reader
   zbar::ImageScanner scanner_;
   bool enable_debugging_;
+  bool print_latency_;
 
   // Output res
 };

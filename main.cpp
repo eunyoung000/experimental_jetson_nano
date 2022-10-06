@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <iostream>
 #include <fstream>
+#include <opencv2/videoio.hpp>
 #include <set>
 #include <unordered_map>
 #include <vector>
@@ -31,6 +32,7 @@ DEFINE_int32(image_width, 1920, "Image width up to 4032");
 DEFINE_int32(image_height, 1080, "Image height up to 3040");
 DEFINE_bool(visualize_boxes, false, "True to visualize the detected boxes in the image");
 DEFINE_string(video_path, "", "Run the process with a saved video");
+DEFINE_string(output_video_path, "", "Run the output as a video");
 
 std::string GetGStreamerPipeline(int capture_width, int capture_height, int display_width, int display_height, int framerate, int flip_method=0) {
     return "nvarguscamerasrc aelock=true gainrange=\"7 7\" exposuretimerange=\"5000000 5000000\" !  video/x-raw(memory:NVMM), width=(int)" + std::to_string(capture_width) + ", height=(int)" +
@@ -214,6 +216,11 @@ int main(int argc, char **argv) {
     }
     cv::namedWindow("Captured frame");
     
+    cv::VideoWriter writer;
+    if (!FLAGS_output_video_path.empty()) {
+        cv::Size frame_size = { (int) capture.get(cv::CAP_PROP_FRAME_WIDTH), (int) capture.get(cv::CAP_PROP_FRAME_HEIGHT) };
+        writer.open(FLAGS_output_video_path, capture.get(cv::CAP_PROP_FOURCC), capture.get(cv::CAP_PROP_FPS), frame_size, true);
+    }
     camera::Focuser focuser(/*bus_info=*/7, kInitialFocusValue);
 
     // Capture an OpenCV frame
@@ -245,7 +252,10 @@ int main(int argc, char **argv) {
 
         // Show captured frame, now with overlays!
         DisplayOutput(output_image, 0.5f);
-                                                                                                                                                          
+
+        if (writer.isOpened()) {
+            writer.write(output_image);
+        }                                                                                                                              
         int key = cv::waitKey(100) & 0xff;
             
         // Stop the program on the ESC key.
@@ -254,5 +264,8 @@ int main(int argc, char **argv) {
         }
     }
     capture.release();
+    if (writer.isOpened()) {
+        writer.release();
+    }
     return 0;
 }
